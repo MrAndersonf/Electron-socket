@@ -1,0 +1,9 @@
+{
+  "name": "Electron-socket",
+  "version": "1.0.0",
+  "description": "This app manages sockets comunication",
+  "main": "index.js",
+  "repository": "https://github.com/MrAndersonf/Electron-socket.git",
+  "author": "Anderson Feitosa <andersonf-oliveira@live.com>",
+  "license": "MIT"
+}
