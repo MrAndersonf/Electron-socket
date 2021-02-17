@@ -1,2 +1,2 @@
-# Electyron-socket
+# Electron-socket
 Api based socket.io app
