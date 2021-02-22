@@ -1,72 +1,79 @@
+const fs = require("fs");
+const e = require("express");
+const path = require("path");
 const server = require("socket.io")(3000);
 const serverStream = require("socket.io-stream");
-const fs = require("fs");
-const path = require("path");
-const { Socket } = require("dgram");
-const socketIoStream = require("socket.io-stream");
 
-var name = "";
-var filename = "";
-let clientsConnected = [];
-let adm = "";
+let filename = "";
+let folder = "";
+
+let executable = "";
 server.on("connection", function (client) {
-  client.emit("identify");
-  console.log(`Client ${client.id}---------${clientsConnected.length}`);
+  client.emit("identify-client");
 
-  client.on("identification", (identification) => {
+  client.on("administrator", () => {
+    client.join("administrator-dashboard");
+  });
+
+  client.on("client-socket-connection", (data) => {
     client.join("scripts");
-    clientsConnected.push({
+    server.to("administrator-dashboard").emit("server-new-connected-client", {
       id: client.id,
-      computer: identification.computer,
-      scripts: identification.scripts,
+      computer: data.computer,
+      scripts: data.scripts,
     });
-    server.to("adm").emit("broadcast", clientsConnected);
+    client.emit("server-generated-identification", client.id);
   });
 
-  client.on("start-script", (data) => {
-    console.log(data);
-    client.broadcast.to(data.socket).emit("adm_instruction", data);
-  });
-
-  client.on("adm", () => {
-    adm = client.id;
-    console.log("adm connected");
-    client.join("adm");
-    console.log(adm);
-    server.to("adm").emit("broadcast", clientsConnected);
-  });
-
-  client.on("download-in-node", (node) => {
-    console.log("download");
+  client.on("disconnect", () => {
     server
-      .to("adm")
-      .emit("node-download", { id: client.id, computer: node.computer });
+      .to("administrator-dashboard")
+      .emit("server-disconnected-client", client.id);
   });
 
-  client.on("extracting", (computer) => {
-    server.to("adm").emit("_extracting", { id: client.id, computer: computer });
-  });
+  //--------------------------------------------------------------------------------------
 
-  client.on("dependencies-in-node", (node) => {
-    console.log("dependencies");
+  client.on("client-downloading-script", (node) => {
+    console.log("baixando");
     server
-      .to("adm")
-      .emit("node-dependencies", { id: client.id, computer: node.computer });
+      .to("administrator-dashboard")
+      .emit("server-download-on-client-started", client.id);
   });
 
-  client.on("success-in-node", (node) => {
-    console.log("success");
+  client.on("client-decompressing-script", (computer) => {
+    console.log("extraindo");
     server
-      .to("adm")
-      .emit("node-success", { id: client.id, computer: node.computer });
+      .to("administrator-dashboard")
+      .emit("server-decompress-on-client-started", client.id);
   });
 
-  client.on("error-in-node", (node) => {
-    server.to("adm").emit("node-error", { id: client.id, error: node.error });
+  client.on("client-dependencies-script", (node) => {
+    console.log("node installl");
+    server
+      .to("administrator-dashboard")
+      .emit("server-dependencies-on-client-started", client.id);
   });
 
-  client.on("receivingSockets", () => {
-    client.emit("to", clientsConnected);
+  client.on("client-successfuly-install-script", (node) => {
+    console.log("sucesso");
+
+    server
+      .to("administrator-dashboard")
+      .emit("server-disconnected-client", client.id);
+
+    server
+      .to("administrator-dashboard")
+      .emit("server-successfuly-installed-on-client", {
+        id: client.id,
+        computer: node.computer,
+        scripts: node.scripts,
+      });
+  });
+
+  client.on("client-error-on-installing", (node) => {
+    server
+      .to("administrator-dashboard")
+      .emit("server-error-on-client", { id: client.id, error: node.error });
   });
 
   client.on("link", (link) => {
@@ -77,37 +84,60 @@ server.on("connection", function (client) {
     server.to("scripts").emit("each");
   });
 
-  client.on("result", (r) => {
-    console.log(r);
-    server.to("adm").emit("reposin", r);
-  });
-
-  client.on("disconnect", () => {
-    clientsConnected.splice(clientsConnected.indexOf(client.id), 1);
-    client.broadcast.emit("broadcast", clientsConnected);
-  });
-
-  serverStream(client).on("sending", function (stream, nameOfTheFile) {
-    filename = path.resolve(__dirname + `/scripts/${nameOfTheFile}`);
-    name = nameOfTheFile;
-    console.log("Name in sic", filename);
-    stream.pipe(fs.createWriteStream(filename));
+  serverStream(client).on("upload-to-server", (stream, { name, exec }) => {
+    console.log(exec);
+    folder = path.resolve(__dirname + `/scripts/${name}`);
+    filename = name;
+    executable = exec;
+    stream.pipe(fs.createWriteStream(folder));
     stream.on("end", function () {
-      client.emit("done");
+      client.emit("server-script-completely-downloaded");
     });
   });
 
-  client.on("spread", () => {
-    console.log("Server on spread");
-    client.broadcast.emit("down");
+  client.on("administrator-install-in-all-sockets", () => {
+    client.broadcast.emit("server-download-new-script");
   });
 
-  serverStream(client).on("sincronize", () => {
-    console.log("server on sincronize");
+  serverStream(client).on("client-request-file", () => {
     var stream = serverStream.createStream();
-    serverStream(client).emit("sinc", stream, name);
-    fs.createReadStream(`./scripts/${name}`).pipe(stream);
+    serverStream(client).emit("server-sending-requested-file", stream, {
+      name: filename,
+      exec: executable,
+    });
+    fs.createReadStream(`./scripts/${filename}`).pipe(stream);
+  });
+
+  //
+  client.on("run-script-on-client", (data) => {
+    client.broadcast.to(data.socket).emit("administrator-demands-run", data);
   });
 });
+
+function isAlreadyConnected(id) {
+  let found = false;
+  clientsConnected.forEach((client, index) => {
+    if (client.id == id) {
+      found = true;
+    }
+  });
+  return found;
+}
+
+function desconnectClient(id) {
+  let clientIndex = "";
+  if (isAlreadyConnected(id)) {
+    clientsConnected.forEach((client, index) => {
+      console.log(`cliente id ${client.id} === ${id}`);
+      if (client.id == id) {
+        clientIndex = index;
+        console.log(`cliente index = ${clientIndex}`);
+      }
+    });
+  }
+  let aux = clientsConnected.splice(clientIndex, 1);
+  console.log(aux);
+  return clientsConnected;
+}
 
 console.log("Plain socket.io server started at port 3000");
