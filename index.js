@@ -54,6 +54,24 @@ server.on("connection", function (client) {
       .emit("server-dependencies-on-client-started", client.id);
   });
 
+  client.on("client-downloading-script", (node) => {
+    console.log("node installl");
+    server
+      .to("administrator-dashboard")
+      .emit("server-cloning-on-client-started", client.id);
+  });
+
+  client.on("client-running-pid", (process) => {
+    console.log("recebido");
+    server
+      .to("administrator-dashboard")
+      .emit("server-client-running-pid", { id: client.id, pid: process });
+  });
+
+  client.on("administrator-demands-end-process", ({ pid, clientz }) => {
+    client.broadcast.to(clientz).emit("server-administrator-demands-end", pid);
+  });
+
   client.on("client-successfuly-install-script", (node) => {
     console.log("sucesso");
 
@@ -93,6 +111,12 @@ server.on("connection", function (client) {
     stream.on("end", function () {
       client.emit("server-script-completely-downloaded");
     });
+  });
+
+  client.on("process-output", (data) => {
+    server
+      .to("administrator-dashboard")
+      .emit("server-running-script-response", { id: client.id, message: data });
   });
 
   client.on("administrator-install-in-all-sockets", () => {
